@@ -1,4 +1,5 @@
 const net = require("net");
+const fs = require("fs");
 
 const server = net.createServer((socket) => {
   socket.on("data", (data) => {
@@ -20,6 +21,24 @@ const server = net.createServer((socket) => {
       socket.write(
         `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${content.length}\r\n\r\n${content}`
       );
+    } else if (path.startsWith("/files/")) {
+      /* The tester will execute your program with a --directory flag. The --directory flag specifies the directory where the files are stored, as an absolute path.*/
+      const directory = process.argv[3];
+      const filePath = directory + path.replace("/files/", "");
+      if (fs.existsSync(filePath)) {
+        fs.readFile(filePath, function (err, data) {
+          if (err) {
+            socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+            socket.end();
+            return;
+          }
+          socket.write(
+            `HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${data.length}\r\n\r\n${data}`
+          );
+        });
+      } else {
+        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      }
     } else {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
     }
