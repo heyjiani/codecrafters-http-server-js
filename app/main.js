@@ -3,7 +3,8 @@ const fs = require("fs");
 
 const server = net.createServer((socket) => {
   socket.on("data", (data) => {
-    const [requestLine, ...otherLines] = data.toString().split("\r\n");
+    const [requestHeader, ...bodyContent] = data.toString().split("\r\n\r\n");
+    const [requestLine, ...otherLines] = requestHeader.toString().split("\r\n");
     const [method, path, version] = requestLine.trim().split(" ");
     const headers = Object.fromEntries(
       otherLines.filter((el) => el).map((pair) => pair.split(": "))
@@ -25,7 +26,14 @@ const server = net.createServer((socket) => {
       /* The tester will execute your program with a --directory flag. The --directory flag specifies the directory where the files are stored, as an absolute path.*/
       const directory = process.argv[3];
       const filePath = directory + path.replace("/files/", "");
-      if (fs.existsSync(filePath)) {
+      console.log(filePath);
+      if (method === "POST") {
+        const body = bodyContent.join("\r\n");
+        fs.writeFile(filePath, body, function (err) {
+          if (err) throw err;
+        });
+        socket.write("HTTP/1.1 201 Created\r\n\r\n");
+      } else if (method === "GET" && fs.existsSync(filePath)) {
         fs.readFile(filePath, function (err, data) {
           if (err) {
             socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
