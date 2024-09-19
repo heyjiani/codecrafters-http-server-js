@@ -1,64 +1,75 @@
 const net = require("net");
 const fs = require("fs");
-const path = require("path");
 
 const PORT = 4221;
 const HOST = "localhost";
 const directory = process.argv[3]; // directory passed via --directory flag
 
+function sendResponse(
+  socket,
+  { statusCode = "200 OK", content = "", contentType = "text/plain" } = {}
+) {
+  let response = `HTTP/1.1 ${statusCode}\r\n`;
+  if (content) {
+    response += `Content-Type: ${contentType}\r\nContent-Length: ${content.length}\r\n`;
+  }
+  response += `\r\n${content}`;
+  socket.write(response);
+}
+
 const server = net.createServer((socket) => {
   socket.on("data", (data) => {
     const [requestHeader, ...bodyContent] = data.toString().split("\r\n\r\n");
     const [requestLine, ...otherLines] = requestHeader.toString().split("\r\n");
-    const [method, urlPath, version] = requestLine.trim().split(" ");
+    const [method, urlPath, _version] = requestLine.trim().split(" ");
     const headers = Object.fromEntries(
       otherLines.filter((el) => el).map((pair) => pair.split(": "))
     );
 
     if (urlPath === "/") {
       // root
-      socket.write("HTTP/1.1 200 OK\r\n\r\n");
+      sendResponse(socket);
     } else if (urlPath === "/user-agent") {
-      // user agent
+      // read user agent header
       const userAgent = headers["User-Agent"];
-      socket.write(
-        `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${userAgent.length}\r\n\r\n${userAgent}`
-      );
+      sendResponse(socket, { content: userAgent });
     } else if (urlPath.startsWith("/echo/")) {
       // echo content
       const content = urlPath.replace("/echo/", "");
-      socket.write(
-        `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${content.length}\r\n\r\n${content}`
-      );
+      sendResponse(socket, { content });
     } else if (urlPath.startsWith("/files/")) {
       // file request
-      const filePath = path.join(directory, urlPath.replace("/files/", ""));
+      const filePath = directory + urlPath.replace("/files/", "");
 
       if (method === "POST") {
         const body = bodyContent.join("\r\n");
         fs.writeFile(filePath, body, function (err) {
           if (err) {
-            socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
+            sendResponse(socket, { statusCode: "500 Internal Server Error" });
             socket.end();
             return;
           }
-          socket.write("HTTP/1.1 201 Created\r\n\r\n");
+          sendResponse(socket, { statusCode: "201 Created" });
         });
       } else if (method === "GET" && fs.existsSync(filePath)) {
         fs.readFile(filePath, function (err, data) {
           if (err) {
-            socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n");
+            sendResponse(socket, { statusCode: "500 Internal Server Error" });
             socket.end();
             return;
           }
-          socket.write(
-            `HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: ${data.length}\r\n\r\n${data}`
-          );
+          sendResponse(socket, {
+            content: data,
+            contentType: "application/octet-stream",
+          });
         });
+      } else {
+        sendResponse(socket, { statusCode: "404 Not Found" });
+        socket.end();
       }
     } else {
       // not found
-      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      sendResponse(socket, { statusCode: "404 Not Found" });
     }
   });
 
